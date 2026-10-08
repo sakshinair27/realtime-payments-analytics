@@ -1,0 +1,18 @@
+name: fintech
+version: "1.0.0"
+config-version: 2
+profile: fintech
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  fintech:
+    staging:
+      # A table, not a view: raw is appended every ~10s, so marts built a few seconds apart from a
+      # view would see different snapshots and stop reconciling. One snapshot per run.
+      +materialized: table
+    marts:
+      +materialized: table

@@ -1,0 +1,15 @@
+confluent-kafka>=2.5
+psycopg2-binary>=2.9
+snowflake-connector-python>=3.12
+dbt-core~=1.11.0
+dbt-postgres~=1.11.0
+dbt-snowflake~=1.11.0
+streamlit>=1.37
+plotly>=5.22
+pandas>=2.2
+scipy>=1.13
+statsmodels>=0.14
+nbformat>=5.10
+nbconvert>=7.16
+ipykernel>=6.29
+matplotlib>=3.8

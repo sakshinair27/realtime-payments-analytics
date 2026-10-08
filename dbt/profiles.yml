@@ -1,0 +1,23 @@
+# Target is chosen by the WAREHOUSE env var (postgres | snowflake); see .env.example.
+fintech:
+  target: "{{ env_var('WAREHOUSE', 'postgres') }}"
+  outputs:
+    postgres:
+      type: postgres
+      host: "{{ env_var('PGHOST', 'localhost') }}"
+      port: "{{ env_var('PGPORT', '5433') | int }}"
+      user: "{{ env_var('PGUSER', 'fintech') }}"
+      password: "{{ env_var('PGPASSWORD', 'fintech') }}"
+      dbname: "{{ env_var('PGDATABASE', 'fintech') }}"
+      schema: analytics
+      threads: 4
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'FINTECH_TRANSFORMER') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'FINTECH_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'FINTECH') }}"
+      schema: ANALYTICS
+      threads: 4

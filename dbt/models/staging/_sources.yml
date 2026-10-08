@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: Landing zone written by the Kafka -> Snowpipe loader. Append-only.
+    config:
+      loaded_at_field: ingested_at
+      freshness:
+        warn_after: { count: 2, period: minute }
+        error_after: { count: 10, period: minute }
+    tables:
+      - name: raw_transactions
+        description: >
+          One row per Kafka record delivered (so duplicates are expected).
+          RECORD_CONTENT is the producer's JSON payload; RECORD_METADATA is the
+          connector's envelope (topic, partition, offset, CreateTime, key).
+        columns:
+          - name: record_metadata
+            tests: [not_null]
+          - name: record_content
+            tests: [not_null]
+          - name: ingested_at
+            description: Processing time - when Snowpipe (or the local loader) committed the row.
+            tests: [not_null]

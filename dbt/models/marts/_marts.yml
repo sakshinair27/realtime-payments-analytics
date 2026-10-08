@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: fct_minute_metrics
+    description: Per event-minute volume, approval rate, avg ticket and ingest-lag KPIs.
+    columns:
+      - name: minute_ts
+        tests: [unique, not_null]
+      - name: txn_count
+        tests:
+          - value_between: { arguments: { min_value: 1 } }
+      - name: approval_rate
+        tests:
+          - not_null
+          - value_between: { arguments: { min_value: 0, max_value: 1 } }
+      - name: avg_ticket
+        tests: [not_null]
+
+  - name: fct_declines_by_reason_minute
+    description: Declines per event-minute and decline reason.
+    tests:
+      - unique_combination_of_columns: { arguments: { columns: [minute_ts, decline_reason] } }
+    columns:
+      - name: minute_ts
+        tests:
+          - not_null
+          - relationships: { arguments: { to: ref('fct_minute_metrics'), field: minute_ts } }
+      - name: decline_reason
+        tests: [not_null]
+      - name: decline_count
+        tests:
+          - value_between: { arguments: { min_value: 1 } }
+
+  - name: fct_merchant_category_minute
+    description: Volume and approval per event-minute and merchant category.
+    tests:
+      - unique_combination_of_columns: { arguments: { columns: [minute_ts, merchant_category] } }
+    columns:
+      - name: minute_ts
+        tests:
+          - not_null
+          - relationships: { arguments: { to: ref('fct_minute_metrics'), field: minute_ts } }
+      - name: approval_rate
+        tests:
+          - value_between: { arguments: { min_value: 0, max_value: 1 } }

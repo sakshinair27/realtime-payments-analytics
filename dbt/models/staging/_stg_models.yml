@@ -1,0 +1,49 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: Deduplicated, typed transactions; one row per transaction_id (first delivery wins).
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: event_ts
+        description: Event time - when the payment happened, from the payload.
+        tests: [not_null]
+      - name: ingested_at
+        description: Processing time - when the warehouse received it.
+        tests: [not_null]
+      - name: amount
+        tests:
+          - not_null
+          - value_between: { arguments: { min_value: 0.01, max_value: 10000 } }
+      - name: currency
+        tests:
+          - accepted_values: { arguments: { values: ["USD"] } }
+      - name: merchant_category
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [grocery, restaurants, fuel, apparel, electronics, travel,
+                         entertainment, healthcare, utilities, digital_goods]
+      - name: card_type
+        tests:
+          - not_null
+          - accepted_values: { arguments: { values: [visa, mastercard, amex, discover] } }
+      - name: status
+        tests:
+          - not_null
+          - accepted_values: { arguments: { values: [approved, declined] } }
+      - name: decline_reason
+        tests:
+          - accepted_values:
+              arguments:
+                values: [insufficient_funds, do_not_honor, suspected_fraud,
+                         expired_card, invalid_cvv, processor_unavailable]
+      - name: retry_count
+        tests:
+          - not_null
+          - value_between: { arguments: { min_value: 0, max_value: 10 } }
+      - name: delivery_count
+        tests:
+          - value_between: { arguments: { min_value: 1, max_value: 100 } }
