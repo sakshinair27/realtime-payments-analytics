@@ -27,7 +27,7 @@ def load_env(path: Path) -> None:
 
 def private_key_body(path: Path) -> str:
     lines = path.read_text().strip().splitlines()
-    return "".join(l for l in lines if not l.startswith("-----"))
+    return "".join(line for line in lines if not line.startswith("-----"))
 
 
 def main() -> int:

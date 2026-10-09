@@ -32,8 +32,9 @@ def _connect():
     if WAREHOUSE == "snowflake":
         import snowflake.connector
         return snowflake.connector.connect(
-            account=os.environ["SNOWFLAKE_ACCOUNT"], user=os.environ["SNOWFLAKE_USER"],
-            password=os.environ["SNOWFLAKE_PASSWORD"], role=os.getenv("SNOWFLAKE_ROLE"),
+            account=os.environ["SNOWFLAKE_ACCOUNT"], user=os.getenv("SNOWFLAKE_USER", "FINTECH_DBT"),
+            private_key_file=str(ROOT / os.getenv("SNOWFLAKE_DBT_PRIVATE_KEY_PATH", "keys/dbt_key.p8")),
+            role=os.getenv("SNOWFLAKE_ROLE"),
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"), database=os.getenv("SNOWFLAKE_DATABASE"),
             schema="ANALYTICS",
         )

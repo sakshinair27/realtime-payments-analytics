@@ -1,0 +1,90 @@
+# CI: every push and pull request must lint clean, pass unit tests, build the dbt project
+# end-to-end on a throwaway Postgres, and produce a buildable Docker image.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    name: Lint & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install ruff pytest pandas
+      - name: Lint
+        run: ruff check .
+      - name: Unit tests (generator contract, dashboard gap handling)
+        run: pytest -q
+
+  dbt:
+    name: dbt build (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fintech
+          POSTGRES_PASSWORD: fintech
+          POSTGRES_DB: fintech
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fintech -d fintech"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      WAREHOUSE: postgres
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: fintech
+      PGPASSWORD: fintech
+      PGDATABASE: fintech
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install "dbt-core~=1.11.0" "dbt-postgres~=1.11.0" psycopg2-binary
+      - name: Create raw schema (same DDL as the local warehouse)
+        run: psql -v ON_ERROR_STOP=1 -f warehouse/local/init.sql
+      - name: Seed raw with 20 minutes of deterministic events (dupes + late events included)
+        run: python scripts/seed_raw.py --events 6000
+      - name: dbt build (all models + tests)
+        working-directory: dbt
+        run: dbt build --target postgres
+      - name: Upload dbt artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts
+          path: |
+            dbt/target/run_results.json
+            dbt/logs/dbt.log
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

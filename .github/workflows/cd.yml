@@ -1,0 +1,88 @@
+# CD: runs only after CI succeeds for a push to main.
+#   1. Publishes the app image to GitHub Container Registry (ghcr.io).
+#   2. Deploys the dbt project to Snowflake, once the Snowflake secrets are configured.
+#      Until then the job passes with a notice instead of failing.
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-image:
+    name: Publish image to GHCR
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-dbt-snowflake:
+    name: Deploy dbt to Snowflake
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    env:
+      WAREHOUSE: snowflake
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_DBT_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_DBT_PRIVATE_KEY }}
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+    steps:
+      - name: Check Snowflake secrets
+        id: gate
+        run: |
+          if [ -z "$SNOWFLAKE_ACCOUNT" ] || [ -z "$SNOWFLAKE_DBT_PRIVATE_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Snowflake secrets not set; skipping the dbt deploy."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - if: steps.gate.outputs.configured == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - if: steps.gate.outputs.configured == 'true'
+        run: pip install "dbt-core~=1.11.0" "dbt-snowflake~=1.11.0"
+      - name: Write dbt service-user key
+        if: steps.gate.outputs.configured == 'true'
+        run: |
+          mkdir -p keys
+          printf '%s\n' "$SNOWFLAKE_DBT_PRIVATE_KEY" > keys/dbt_key.p8
+          chmod 600 keys/dbt_key.p8
+      - name: dbt build on Snowflake (tests gate the deploy)
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: dbt
+        run: dbt build --target snowflake

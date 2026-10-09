@@ -1,5 +1,8 @@
 # Real-time fintech transaction analytics
 
+[![CI](https://github.com/sakshinair27/realtime-payments-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/sakshinair27/realtime-payments-analytics/actions/workflows/ci.yml)
+[![CD](https://github.com/sakshinair27/realtime-payments-analytics/actions/workflows/cd.yml/badge.svg)](https://github.com/sakshinair27/realtime-payments-analytics/actions/workflows/cd.yml)
+
 Synthetic card payments stream through **Kafka** into **Snowflake** (Kafka connector → internal stage →
 Snowpipe), **dbt** turns them into per-minute marts, a **Streamlit** dashboard watches them live, and a
 notebook runs an **A/B test** on retry strategies for declined payments.
@@ -186,6 +189,42 @@ validates the analysis harness on real pipeline data. It isn't evidence about re
 | `relationships` breakdown → minute mart, `assert_marts_reconcile` | breakdowns sum to totals |
 | `assert_ingested_after_produced` (warn) | clock sanity: processing time ≥ Kafka time |
 | source `freshness` on `ingested_at` | pipeline is alive (`dbt source freshness`) |
+
+## CI/CD
+
+GitHub Actions, in [.github/workflows/](.github/workflows/):
+
+```mermaid
+flowchart LR
+    P["push / PR<br/>(any branch)"] --> CI
+    subgraph CI["CI: ci.yml"]
+        direction TB
+        L["Lint (ruff)<br/>+ unit tests (pytest)"]
+        D["dbt build on a fresh Postgres<br/>seeded with 6,000 events"]
+        I["Docker image builds"]
+    end
+    CI -->|"all green on main"| CD
+    subgraph CD["CD: cd.yml"]
+        direction TB
+        G["Publish image<br/>ghcr.io/sakshinair27/realtime-payments-analytics"]
+        S["dbt build on Snowflake<br/>(env: snowflake-prod)"]
+    end
+```
+
+| Stage | Job | Gate |
+|---|---|---|
+| CI | **Lint & unit tests**: `ruff`, plus `pytest` covering the generator contract and the dashboard's restart/gap handling | every push and PR |
+| CI | **dbt build (Postgres)**: a throwaway Postgres service is seeded by [scripts/seed_raw.py](scripts/seed_raw.py) with connector-shaped rows, duplicates and late events included, then every model and test runs | every push and PR |
+| CI | **Docker image builds** | every push and PR |
+| CD | **Publish image** to GHCR, tagged `sha-<commit>` and `latest` | CI green on `main` |
+| CD | **Deploy dbt to Snowflake**: tests run on the prod warehouse, and any failure fails the deploy | CI green on `main`, Snowflake secrets set |
+
+The unit tests are regression tests for real bugs found while building this: restarts replaying
+`transaction_id`s, and pipeline downtime being drawn as a volume crash.
+
+**Snowflake deploy secrets** (Settings → Secrets and variables → Actions):
+`SNOWFLAKE_ACCOUNT` (account identifier) and `SNOWFLAKE_DBT_PRIVATE_KEY` (full contents of
+`keys/dbt_key.p8`). Until both exist, the deploy job passes with a "skipped" notice.
 
 ## Design notes and trade-offs
 
