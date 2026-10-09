@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from dashboard.timeseries import trim_partial_edges, with_gaps  # noqa: E402
 from warehouse.client import WAREHOUSE, query  # noqa: E402
 
 # Categorical slots in fixed order, assigned per entity (never by rank) so a reason or
@@ -18,7 +19,7 @@ from warehouse.client import WAREHOUSE, query  # noqa: E402
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
 REASONS = ["insufficient_funds", "do_not_honor", "processor_unavailable",
            "suspected_fraud", "expired_card", "invalid_cvv"]
-REASON_COLORS = dict(zip(REASONS, SERIES))
+REASON_COLORS = dict(zip(REASONS, SERIES, strict=False))  # 6 reasons, 8-slot palette
 PRIMARY = SERIES[0]
 GRID = "rgba(137,135,129,0.25)"
 
@@ -41,7 +42,7 @@ def style(fig: go.Figure, height: int = 280, y_title: str | None = None, pct: bo
 @st.cache_data(ttl=5, show_spinner=False)
 def load(window_min: int) -> dict[str, pd.DataFrame]:
     # Pull a little extra so the window is full after dropping the in-progress minute.
-    since = f"(select max(minute_ts) from {{schema}}.fct_minute_metrics)"
+    since = "(select max(minute_ts) from {schema}.fct_minute_metrics)"
     lookback = f"{since} - interval '{window_min + 1} minutes'"
     return {
         "minute": query(f"select * from {{schema}}.fct_minute_metrics "
@@ -52,39 +53,6 @@ def load(window_min: int) -> dict[str, pd.DataFrame]:
         "merchant": query(f"select minute_ts, merchant_category, txn_count, approved_count, total_amount "
                           f"from {{schema}}.fct_merchant_category_minute where minute_ts > {lookback}"),
     }
-
-
-def trim_partial_edges(settled: pd.DataFrame) -> pd.DataFrame:
-    """Drop partial minutes next to a stop/start of the pipeline.
-
-    Where minutes are missing, the pipeline was down. The minute it stopped in and the first
-    minute(s) after it restarted (which only hold backdated late events) are partial and would
-    read as a volume crash. Only minutes adjacent to a gap or the window's start are trimmed,
-    so a genuine drop while the pipeline is running is never hidden.
-    """
-    if settled.empty:
-        return settled
-    floor = 0.8 * settled["txn_count"].median()
-    segment = (settled["minute_ts"].diff() > pd.Timedelta(minutes=1)).cumsum()
-    keep = []
-    for seg_id, seg in settled.groupby(segment, sort=True):
-        low = seg["txn_count"] < floor
-        first_full = low.values.argmin() if not low.all() else len(seg)
-        seg = seg.iloc[first_full:]
-        if seg_id != segment.iloc[-1] and not seg.empty:  # trailing edge before a gap
-            low = seg["txn_count"] < floor
-            last_full = len(seg) - low.values[::-1].argmin() if not low.all() else 0
-            seg = seg.iloc[:last_full]
-        keep.append(seg)
-    return pd.concat(keep) if keep else settled.iloc[0:0]
-
-
-def with_gaps(df: pd.DataFrame) -> pd.DataFrame:
-    """Reindex onto a continuous minute grid so downtime plots as a gap, not a slope."""
-    if df.empty:
-        return df
-    grid = pd.date_range(df["minute_ts"].min(), df["minute_ts"].max(), freq="1min", name="minute_ts")
-    return df.set_index("minute_ts").reindex(grid).reset_index()
 
 
 def numeric(df: pd.DataFrame) -> pd.DataFrame:
@@ -203,7 +171,7 @@ def live():
     st.caption(f"Late arrivals (>30s) in window: {int(settled['late_arrivals'].sum()):,} · "
                f"duplicate deliveries dropped by staging: {int(settled['duplicates_dropped'].sum()):,} · "
                f"open minute {open_minute:%H:%M} UTC so far: {int(minute.iloc[-1].txn_count):,} txns · "
-               f"refreshed {datetime.now(timezone.utc):%H:%M:%S} UTC")
+               f"refreshed {datetime.now(UTC):%H:%M:%S} UTC")
 
     with st.expander("Table view"):
         st.dataframe(settled.sort_values("minute_ts", ascending=False), width="stretch",

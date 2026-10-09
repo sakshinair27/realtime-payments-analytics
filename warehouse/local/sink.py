@@ -19,8 +19,8 @@ import sys
 import time
 
 import psycopg2
-from psycopg2.extras import Json, execute_values
 from confluent_kafka import Consumer, KafkaError
+from psycopg2.extras import Json, execute_values
 
 
 def pg_connect():
@@ -49,7 +49,7 @@ def main(argv=None) -> int:
     consumer.subscribe([args.topic])
 
     conn = None
-    for attempt in range(30):
+    for _ in range(30):
         try:
             conn = pg_connect()
             break

@@ -1,6 +1,7 @@
 -- One-time Snowflake setup. Run as ACCOUNTADMIN (or SECURITYADMIN + SYSADMIN).
--- Replace <PUBLIC_KEY> with the body of keys/rsa_key.pub (no header/footer lines);
--- see README "Snowflake mode" for generating the key pair.
+-- Replace <LOADER_PUBLIC_KEY> / <DBT_PUBLIC_KEY> with the bodies of keys/rsa_key.pub and
+-- keys/dbt_key.pub (no header/footer lines), or run warehouse/snowflake/render_setup.py,
+-- which writes a filled-in copy to keys/setup_filled.sql.
 
 use role securityadmin;
 create role if not exists fintech_loader;      -- used by the Kafka connector / Snowpipe
@@ -8,10 +9,24 @@ create role if not exists fintech_transformer; -- used by dbt and the dashboard
 grant role fintech_loader to role sysadmin;
 grant role fintech_transformer to role sysadmin;
 
+-- Both technical users are TYPE = SERVICE with key-pair auth only: no password, so they are
+-- exempt from the MFA that Snowflake enforces on password logins, and can't be phished.
 create user if not exists kafka_connector
+    type = service
     default_role = fintech_loader
-    rsa_public_key = '<PUBLIC_KEY>';
+    rsa_public_key = '<LOADER_PUBLIC_KEY>';
 grant role fintech_loader to user kafka_connector;
+
+create user if not exists fintech_dbt
+    type = service
+    default_role = fintech_transformer
+    default_warehouse = fintech_wh
+    rsa_public_key = '<DBT_PUBLIC_KEY>';
+grant role fintech_transformer to user fintech_dbt;
+
+-- Let the human running this script browse the results in Snowsight too.
+set me = current_user();
+grant role fintech_transformer to user identifier($me);
 
 use role sysadmin;
 create warehouse if not exists fintech_wh
@@ -46,9 +61,6 @@ grant usage on schema fintech.raw to role fintech_transformer;
 grant select on all tables in schema fintech.raw to role fintech_transformer;
 grant select on future tables in schema fintech.raw to role fintech_transformer;
 grant usage, create table, create view on schema fintech.analytics to role fintech_transformer;
-
--- Grant fintech_transformer to the human / service user that runs dbt + the dashboard:
--- grant role fintech_transformer to user <YOUR_USER>;
 
 -- Useful once data is flowing:
 --   show pipes in schema fintech.raw;

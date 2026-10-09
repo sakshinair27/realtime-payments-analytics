@@ -27,7 +27,7 @@ import signal
 import sys
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 MERCHANT_CATEGORIES = {
     # category: (weight, lognormal mu, lognormal sigma, base decline prob)
@@ -165,9 +165,9 @@ def parse_args(argv=None):
 def main(argv=None) -> int:
     args = parse_args(argv)
     if args.start_time:
-        start = datetime.fromisoformat(args.start_time.replace("Z", "+00:00")).astimezone(timezone.utc)
+        start = datetime.fromisoformat(args.start_time.replace("Z", "+00:00")).astimezone(UTC)
     else:
-        start = datetime.now(timezone.utc).replace(microsecond=0)
+        start = datetime.now(UTC).replace(microsecond=0)
     sim = TransactionSimulator(args.seed, start, args.rate, args.dup_rate, args.late_rate)
 
     producer = None

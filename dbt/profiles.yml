@@ -14,8 +14,10 @@ fintech:
     snowflake:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
-      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
-      password: "{{ env_var('SNOWFLAKE_PASSWORD', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'FINTECH_DBT') }}"
+      # Key-pair auth for a TYPE=SERVICE user (no password, so no MFA prompt). The path is
+      # relative to dbt/, where dbt always runs (host and the dbt-runner container).
+      private_key_path: "../{{ env_var('SNOWFLAKE_DBT_PRIVATE_KEY_PATH', 'keys/dbt_key.p8') }}"
       role: "{{ env_var('SNOWFLAKE_ROLE', 'FINTECH_TRANSFORMER') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'FINTECH_WH') }}"
       database: "{{ env_var('SNOWFLAKE_DATABASE', 'FINTECH') }}"
