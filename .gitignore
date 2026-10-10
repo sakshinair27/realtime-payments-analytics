@@ -8,3 +8,5 @@ dbt/logs/
 dbt/dbt_packages/
 .ipynb_checkpoints/
 dbt/.user.yml
+.env.*
+!.env.example

@@ -59,8 +59,10 @@ grant ownership on table fintech.raw.raw_transactions to role fintech_loader cop
 -- Append-only for everyone downstream: read-only access to raw.
 grant usage on schema fintech.raw to role fintech_transformer;
 grant select on all tables in schema fintech.raw to role fintech_transformer;
-grant select on future tables in schema fintech.raw to role fintech_transformer;
 grant usage, create table, create view on schema fintech.analytics to role fintech_transformer;
+
+use role securityadmin;  -- future grants need MANAGE GRANTS, which SYSADMIN lacks
+grant select on future tables in schema fintech.raw to role fintech_transformer;
 
 -- Useful once data is flowing:
 --   show pipes in schema fintech.raw;
