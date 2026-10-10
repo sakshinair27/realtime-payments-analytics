@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -52,9 +54,21 @@ def main() -> int:
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         print(f"{resp.status} registered {NAME}")
-    with urllib.request.urlopen(f"{url}/connectors/{NAME}/status", timeout=30) as resp:
-        print(resp.read().decode())
-    return 0
+    # The status record appears a few seconds after registration; poll instead of failing.
+    for _ in range(15):
+        try:
+            with urllib.request.urlopen(f"{url}/connectors/{NAME}/status", timeout=30) as resp:
+                status = json.loads(resp.read())
+        except urllib.error.HTTPError:
+            time.sleep(2)
+            continue
+        tasks = [t["state"] for t in status["tasks"]]
+        print(f"connector {status['connector']['state']}, tasks {tasks}")
+        if status["connector"]["state"] == "RUNNING" and tasks and all(t == "RUNNING" for t in tasks):
+            return 0
+        time.sleep(2)
+    print("connector did not reach RUNNING; check: docker compose logs kafka-connect", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

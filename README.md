@@ -152,29 +152,46 @@ validates the analysis harness on real pipeline data. It isn't evidence about re
 
 ## Snowflake mode
 
-1. **Key pair for the connector user:**
+Both technical users are `TYPE = SERVICE` with **key-pair auth only**: `KAFKA_CONNECTOR` for Snowpipe
+ingestion, and `FINTECH_DBT` for dbt, the dashboard, the notebook and CD. They have no passwords, so
+Snowflake's MFA requirement for password logins doesn't apply, and there's nothing to phish.
+
+1. **Two key pairs** (git-ignored in `keys/`):
    ```bash
    openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/rsa_key.p8 -nocrypt
    openssl rsa -in keys/rsa_key.p8 -pubout -out keys/rsa_key.pub
+   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/dbt_key.p8 -nocrypt
+   openssl rsa -in keys/dbt_key.p8 -pubout -out keys/dbt_key.pub
    ```
-2. **Objects:** paste the body of `keys/rsa_key.pub` into
-   [warehouse/snowflake/setup.sql](warehouse/snowflake/setup.sql), then run it as ACCOUNTADMIN. It creates the
-   roles, `FINTECH_WH`, `FINTECH.RAW` / `FINTECH.ANALYTICS`, the `KAFKA_CONNECTOR` user, and
-   `RAW_TRANSACTIONS` with `INGESTED_AT DEFAULT CURRENT_TIMESTAMP()`. Grant `FINTECH_TRANSFORMER` to the user
-   that will run dbt.
-3. **`.env`:** set `WAREHOUSE=snowflake`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER` / `SNOWFLAKE_PASSWORD`
-   (the dbt/dashboard user).
+2. **Objects:** `python warehouse/snowflake/render_setup.py` writes `keys/setup_filled.sql`, which is
+   [setup.sql](warehouse/snowflake/setup.sql) with both public keys filled in. Run all of it as ACCOUNTADMIN.
+   It creates the roles, both service users, `FINTECH_WH` (XS, auto-suspend 60s), `FINTECH.RAW` /
+   `FINTECH.ANALYTICS`, and `RAW_TRANSACTIONS` with `INGESTED_AT DEFAULT CURRENT_TIMESTAMP()`.
+3. **`.env`:** set `WAREHOUSE=snowflake` and `SNOWFLAKE_ACCOUNT=<orgname-accountname>`. Everything else
+   defaults correctly from `.env.example`. The `keys/` folder is mounted read-only into the containers and is
+   never baked into the image.
 4. **Start the stack with Kafka Connect, then register the connector:**
    ```bash
-   docker compose --profile snowflake up -d --build
+   docker compose --profile snowflake up -d
    docker compose stop local-sink
    python warehouse/snowflake/register_connector.py
    ```
-   The connector creates its stage and pipes in `FINTECH.RAW`. Check them with `show pipes in schema fintech.raw;`
-   and `copy_history` (see the bottom of `setup.sql`).
+   The connector creates its internal stage and one pipe per partition in `FINTECH.RAW`. Check them with
+   `show pipes in schema fintech.raw;` and `copy_history` (see the bottom of `setup.sql`).
 5. dbt, the dashboard and the notebook pick up `WAREHOUSE=snowflake` from `.env`, with no code changes.
    The SQL differences (VARIANT vs JSONB, timezone conversion) live in
    [dbt/macros/cross_db.sql](dbt/macros/cross_db.sql).
+
+**Verified run (2026-10-09, AWS us-east-2, XS warehouse):**
+- **Ingestion:** the connector (3 tasks, `SNOWPIPE` method) loaded about 43k rows. That's the topic's
+  retained backlog plus the live stream at about 300 events/min.
+- **Snowpipe:** steady-state loads land 25–40s after flush, and `INGESTED_AT` is stamped by the column default.
+- **dbt:** the loop builds staging and all three marts on Snowflake every 30s, with tests passing.
+  Staging dropped 404 duplicate deliveries.
+- **Latency:** p95 event-to-warehouse lag fell from about 235s (backlog catch-up) to under a minute.
+  That's higher than the 10s local loader, because Snowpipe batches files.
+- **Cost:** while the stack runs, the dbt loop keeps the XS warehouse up at about 1 credit/hour. Stop the
+  stack when you're done.
 
 ## dbt tests
 

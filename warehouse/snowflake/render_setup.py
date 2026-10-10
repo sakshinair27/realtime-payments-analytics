@@ -13,8 +13,8 @@ def key_body(path: Path) -> str:
 
 
 sql = (Path(__file__).parent / "setup.sql").read_text()
-sql = sql.replace("<LOADER_PUBLIC_KEY>", key_body(ROOT / "keys" / "rsa_key.pub"))
-sql = sql.replace("<DBT_PUBLIC_KEY>", key_body(ROOT / "keys" / "dbt_key.pub"))
+sql = sql.replace("'<LOADER_PUBLIC_KEY>'", "'" + key_body(ROOT / "keys" / "rsa_key.pub") + "'")
+sql = sql.replace("'<DBT_PUBLIC_KEY>'", "'" + key_body(ROOT / "keys" / "dbt_key.pub") + "'")
 out = ROOT / "keys" / "setup_filled.sql"
 out.write_text(sql)
 print(f"wrote {out}")
