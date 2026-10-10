@@ -10,6 +10,10 @@ notebook runs an **A/B test** on retry strategies for declined payments.
 A local mode swaps Snowflake for Postgres, using the same landing-table shape, dbt models, dashboard, and
 notebook. The whole stack runs with one `docker compose up` and no cloud account.
 
+![Live dashboard reading the dbt marts in Snowflake](docs/images/dashboard.png)
+*The live dashboard reading the dbt marts in Snowflake. The approval-rate dip around 00:05 is the
+generator's simulated processor outage, which repeats every 15 minutes, flowing through Kafka, Snowpipe and dbt.*
+
 ## Architecture
 
 ```mermaid
@@ -238,6 +242,15 @@ flowchart LR
 
 The unit tests are regression tests for real bugs found while building this: restarts replaying
 `transaction_id`s, and pipeline downtime being drawn as a volume crash.
+
+![GitHub Actions: CI on every branch and PR, CD after each merge to main](docs/images/actions.png)
+*Every change goes through CI on its branch and pull request. Each merge to `main` then runs CD.*
+
+![Deployments to the snowflake-prod environment](docs/images/deployments.png)
+*CD deployments to the `snowflake-prod` environment. Deployment #2 was the first one with Snowflake
+secrets configured: dbt rebuilt all 4 models and ran all 39 tests on Snowflake. Snowflake's query and
+login history confirm this, with every login coming from a GitHub-hosted runner. Deployment #1 ran before
+the secrets existed, so its dbt step skipped.*
 
 **Snowflake deploy secrets** (Settings → Secrets and variables → Actions):
 `SNOWFLAKE_ACCOUNT` (account identifier) and `SNOWFLAKE_DBT_PRIVATE_KEY` (full contents of
