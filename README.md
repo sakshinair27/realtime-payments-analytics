@@ -186,16 +186,36 @@ Snowflake's MFA requirement for password logins doesn't apply, and there's nothi
    The SQL differences (VARIANT vs JSONB, timezone conversion) live in
    [dbt/macros/cross_db.sql](dbt/macros/cross_db.sql).
 
-**Verified run (2026-10-09, AWS us-east-2, XS warehouse):**
-- **Ingestion:** the connector (3 tasks, `SNOWPIPE` method) loaded about 43k rows. That's the topic's
-  retained backlog plus the live stream at about 300 events/min.
-- **Snowpipe:** steady-state loads land 25–40s after flush, and `INGESTED_AT` is stamped by the column default.
-- **dbt:** the loop builds staging and all three marts on Snowflake every 30s, with tests passing.
-  Staging dropped 404 duplicate deliveries.
-- **Latency:** p95 event-to-warehouse lag fell from about 235s (backlog catch-up) to under a minute.
-  That's higher than the 10s local loader, because Snowpipe batches files.
+**Verified run (2026-10-09, AWS us-east-2, XS warehouse).** This ran on a 30-day Snowflake trial
+(Oct 9 – Nov 8, 2026). The figures below come from Snowflake's own load history
+(`SNOWFLAKE.ACCOUNT_USAGE.COPY_HISTORY`), captured before the trial ended.
+
+- **Ingestion:** the connector (3 tasks, `SNOWPIPE` method) created one pipe per partition, and they loaded
+  **272 files / 46,289 rows with 0 failed files**. That's the topic's retained backlog plus the live stream
+  at about 300 events/min.
+- **Snowpipe latency:** an average of **20.7s** from file received to rows loaded. `INGESTED_AT` is stamped
+  by the column default, because the connector's `COPY` lists only `RECORD_METADATA` and `RECORD_CONTENT`.
+- **End-to-end latency:** p95 event-to-warehouse lag fell from about 235s (backlog catch-up) to about a minute
+  (connector flush + Snowpipe + late events). That's higher than the 10s local loader, because Snowpipe
+  batches files.
+- **dbt:** staging and all three marts rebuilt on Snowflake every 30s, with tests passing. Raw → staging went
+  from **46,289 → 45,848 rows: 441 duplicate deliveries (0.95%) removed**, in line with the generator's 1%
+  duplicate rate, and no transaction dropped.
 - **Cost:** while the stack runs, the dbt loop keeps the XS warehouse up at about 1 credit/hour. Stop the
   stack when you're done.
+
+![Snowpipes created by the Kafka connector](docs/images/snowflake-pipes.png)
+*The three Snowpipes the Kafka connector created, one per partition. Each `COPY` targets only the connector's columns.*
+
+![Snowpipe load summary](docs/images/snowflake-load-summary.png)
+*Snowflake's load history: 272 files, 46,289 rows, 0 failures, 20.7s average Snowpipe latency.*
+
+![Row counts from raw to marts](docs/images/snowflake-row-counts.png)
+*Row counts from raw to marts. Raw matches the Snowpipe total exactly, and staging is 441 rows lower after
+deduplication.*
+
+Now that the trial has ended, the CD "Deploy dbt to Snowflake" job skips (its secrets were removed), and
+local mode runs everything on Postgres.
 
 ## dbt tests
 
